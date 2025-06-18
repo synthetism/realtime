@@ -12,7 +12,8 @@
 ██████  ████  █        █  ████  █        ████  ████        █  ████  █        █
                                                                             
       
-Communication for synthetic systems
+version: 0.1.0-dev
+description: Communication for synthetic systems 
 ```
 
 # @synet/realtime
