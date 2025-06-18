@@ -52,7 +52,7 @@ export class WebSocketRealtimeServer implements RealtimeServer {
     const port = this.options.transportOptions?.port || 3030;
     this.wsServer = new WebSocketServer({ port });
 
-    this.wsServer.on("connection", (socket, request) => {
+    this.wsServer.on("connection", (socket: WebSocket, request:IncomingMessage) => {
       this.handleNewConnection(socket, request);
     });
 
@@ -152,7 +152,7 @@ export class WebSocketRealtimeServer implements RealtimeServer {
     });
 
     // Handle client messages (minimal - just for subscribe/unsubscribe)
-    socket.on("message", (data) => {
+    socket.on("message", (data: RealtimeEvent) => {
       try {
         const message = JSON.parse(data.toString());
 
