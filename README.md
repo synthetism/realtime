@@ -1,3 +1,14 @@
+```
+   ______                        __                      ____  _            
+  / ____ \_______  ______  ___  / /_    ________  ____ _/ / /_(_)___ ___  ___ 
+ / / __ `/ ___/ / / / __ \/ _ \/ __/   / ___/ _ \/ __ `/ / __/ / __ `__ \/ _ \
+/ / /_/ (__  ) /_/ / / / /  __/ /_    / /  /  __/ /_/ / / /_/ / / / / / /  __/
+\ \__,_/____/\__, /_/ /_/\___/\__/   /_/   \___/\__,_/_/\__/_/_/ /_/ /_/\___/ 
+ \____/     /____/                                                                                          
+
+Communication for synthetic systems  
+```
+
 # @synet/realtime
 
 Real-time communication implementations of [@synet/patterns](https://www.npmjs.com/package/@synet/patterns) interfaces for seamless client-server communication across different transport protocols.
