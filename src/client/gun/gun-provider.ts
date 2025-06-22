@@ -7,7 +7,6 @@ import type { RealtimeEvent } from '@synet/patterns/realtime';
 import { GunRealtimeChannel } from './gun-channel';
 import type { GunOptions } from './gun-types';
 import GunInstance from 'gun';
-import chalk from 'chalk';
 
 /**
  * GUN implementation of RealtimeProvider
@@ -55,7 +54,7 @@ createChannel<TIn extends RealtimeEvent = RealtimeEvent, TOut extends RealtimeEv
   
   if (existingChannel) {
     // Return the existing channel with the correct type
-    console.log(chalk.red(`Reusing existing channel for topic: ${topic}`));
+    console.log(`Reusing existing channel for topic: ${topic}`);
     return existingChannel as RealtimeChannel<TIn, TOut>;
   }
   

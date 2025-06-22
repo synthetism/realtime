@@ -1,4 +1,5 @@
-import type { RealtimeEvent } from "@synet/patterns/realtime";
+import type { RealtimeProviderOptions } from "@synet/patterns/realtime";
+
 /**
  * NATS-specific configuration options
  */
@@ -9,6 +10,10 @@ export interface NatsOptions {
   user?: string;
   password?: string;
   token?: string;
+  nkeyPath?: {
+    pub: string; // Path to NKey public key file
+    seed:string;
+  }
 
   /**
    * Connection options
@@ -27,3 +32,26 @@ export interface NatsOptions {
    */
   debug?: boolean;
 }
+
+
+export interface NatsProviderOptions extends RealtimeProviderOptions<NatsOptions> {
+  // Common options
+
+  auth?: {
+    enabled: boolean;
+    validateToken?: (token: string) => Promise<boolean>;
+    extractClaims?: (token: string) => Promise<Record<string, unknown>>;
+  };
+
+  reconnect?: {
+    enabled: boolean;
+    maxAttempts?: number;
+    initialDelayMs?: number;
+    maxDelayMs?: number;
+  };
+
+  // Transport-specific options
+  transportOptions?: NatsOptions;
+}
+
+

@@ -1,3 +1,3 @@
-export * from "./gun-realtime-server";
-export * from "./websocket-realtime-server";
-export * from "./nats-realtime-server";
+export * from "./gun";
+export * from "./websocket";
+export * from "./nats";

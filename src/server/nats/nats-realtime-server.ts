@@ -1,37 +1,23 @@
-import {
-  connect,
-  StringCodec,
-  type NatsConnection,
-  type Subscription,
-} from "nats";
+import { connect, StringCodec,  type NatsConnection, type  Subscription } from "nats";
 import crypto from "node:crypto";
 import type { Logger } from "@synet/logger";
-import type {
+import type { 
   RealtimeServer,
   RealtimeServerOptions,
-  RealtimeServerStats,
+  RealtimeServerStats,  
   ClientConnectedEventData,
   ClientDisconnectedEventData,
   MessageReceivedEventData,
   ServerEventType,
   RealtimeEvent,
-  Topic,
+  Topic
 } from "@synet/patterns/realtime";
-import chalk from "chalk";
+import type { AuthOptions, NatsServerOptions } from "./nats-types";
+import * as nkeys from 'ts-nkeys';
+import fs from "node:fs";
 /**
  * NATS-specific options
  */
-export interface NatsServerOptions {
-  url?: string;
-  user?: string;
-  password?: string;
-  token?: string;
-  reconnect?: {
-    enabled: boolean;
-    maxAttempts: number;
-    delayMs: number;
-  };
-}
 
 /**
  * Client information for tracking connections
@@ -70,13 +56,13 @@ export interface ControlUnsubscribeMessage {
 }
 
 // Union type for any control message
-export type ControlMessage =
-  | ControlConnectMessage
-  | ControlDisconnectMessage
-  | ControlSubscribeMessage
+export type ControlMessage = 
+  | ControlConnectMessage 
+  | ControlDisconnectMessage 
+  | ControlSubscribeMessage 
   | ControlUnsubscribeMessage;
 
-export class NatsRealtimeServer implements RealtimeServer {
+export class NatsRealtimeServer<TEvent extends RealtimeEvent = RealtimeEvent> implements RealtimeServer<TEvent> {
   private natsConnection?: NatsConnection;
   private clients: Map<string, ClientInfo> = new Map();
   private subscriptions: Map<Topic, Set<string>> = new Map(); // topic -> client ids
@@ -88,42 +74,84 @@ export class NatsRealtimeServer implements RealtimeServer {
 
   constructor(
     private options: RealtimeServerOptions<NatsServerOptions> = {},
-    private logger?: Logger,
+    private logger?: Logger
   ) {
     this.stats = {
       connectedClients: 0,
       totalTopics: 0,
       messagesSent: 0,
       messagesReceived: 0,
-      uptime: 0,
+      uptime: 0
     };
   }
 
   async start(): Promise<void> {
-    const natsUrl =
-      this.options.transportOptions?.url || "nats://localhost:4222";
-
+    const natsUrl = this.options.transportOptions?.url || "nats://localhost:4222";
+    
     try {
       // Connect to NATS server
+
+       const authOptions: AuthOptions = {};
+      
+           if (this.options.auth) {
+            // Set user/password if provided
+            if (this.options.transportOptions?.user) {
+              authOptions.user = this.options.transportOptions.user;
+              authOptions.pass = this.options.transportOptions.password;
+              this.logger?.debug('Using user/password authentication for NATS');
+            }
+            
+            // Set token if provided
+            if (this.options.transportOptions?.token) {
+              authOptions.token = this.options.transportOptions.token;
+              this.logger?.debug('Using token authentication for NATS');
+            }
+            
+            // Set nkey if provided
+            if (this.options.transportOptions?.nkeyPath) {
+              try {
+      
+                const nkey_pub = fs.readFileSync(this.options.transportOptions.nkeyPath.pub, 'utf8').trim();
+                const nkey_seed = fs.readFileSync(this.options.transportOptions.nkeyPath.seed, 'utf8').trim();
+      
+                authOptions.nkey = nkey_pub;
+      
+                authOptions.sigCB = (nonce: Uint8Array): Uint8Array => {
+                // Convert nonce to Buffer if it's not already
+                const nonceBuffer = Buffer.isBuffer(nonce) 
+                  ? nonce 
+                  : Buffer.from(nonce);
+                            
+                const sk = nkeys.fromSeed(Buffer.from(nkey_seed));  
+                // Sign and return
+                return sk.sign(nonceBuffer);
+               };
+      
+                this.logger?.debug('Using NKey authentication for NATS');
+              } catch (error) {
+                this.logger?.error(`Failed to read NKey from ${this.options.transportOptions.nkeyPath}:`, error);
+                throw error;
+              }
+            }
+      }
       this.natsConnection = await connect({
         servers: natsUrl,
         user: this.options.transportOptions?.user,
         pass: this.options.transportOptions?.password,
         token: this.options.transportOptions?.token,
         reconnect: this.options.transportOptions?.reconnect?.enabled !== false,
-        maxReconnectAttempts:
-          this.options.transportOptions?.reconnect?.maxAttempts || -1,
-        reconnectTimeWait:
-          this.options.transportOptions?.reconnect?.delayMs || 1000,
+        maxReconnectAttempts: this.options.transportOptions?.reconnect?.maxAttempts || -1,
+        reconnectTimeWait: this.options.transportOptions?.reconnect?.delayMs || 1000,
       });
 
       this.logger?.info(`NATS RealtimeServer connected to ${natsUrl}`);
 
       // Set up subscription for client connection messages
       await this.setupControlSubscriptions();
-
+      
       // Start periodic cleanup of stale clients
       this.startStaleClientCleanup();
+      
     } catch (error) {
       console.error("Failed to connect to NATS server:", error);
       throw error;
@@ -141,7 +169,7 @@ export class NatsRealtimeServer implements RealtimeServer {
     // Drain and close connection to NATS server
     await this.natsConnection.drain();
     await this.natsConnection.close();
-
+    
     // Clean up resources
     this.natsSubscriptions.clear();
     this.clients.clear();
@@ -150,7 +178,7 @@ export class NatsRealtimeServer implements RealtimeServer {
     this.logger?.info("NATS RealtimeServer stopped");
   }
 
-  async broadcast(topic: Topic, event: RealtimeEvent): Promise<void> {
+  async broadcast(topic: Topic, event: TEvent): Promise<void> {
     if (!this.natsConnection) {
       throw new Error("NATS server not started");
     }
@@ -158,16 +186,13 @@ export class NatsRealtimeServer implements RealtimeServer {
     try {
       // Convert event to string for transmission
       const message = JSON.stringify(event);
-
+      
       // Publish to NATS topic
-      this.natsConnection.publish(
-        `topic.${topic}`,
-        this.stringCodec.encode(message),
-      );
-
+      this.natsConnection.publish(`topic.${topic}`, this.stringCodec.encode(message));
+      
       // Update stats
       this.stats.messagesSent++;
-
+      
       // Log broadcast
       this.logger?.debug(`Broadcasted to ${topic}: Event ${event.type}`);
     } catch (error) {
@@ -176,33 +201,28 @@ export class NatsRealtimeServer implements RealtimeServer {
     }
   }
 
-  async sendToClient(clientId: string, event: RealtimeEvent): Promise<void> {
+  async sendToClient(clientId: string, event: TEvent): Promise<void> {
     if (!this.natsConnection) {
       throw new Error("NATS server not started");
     }
-
+    
     const client = this.clients.get(clientId);
     if (!client) {
       throw new Error(`Client ${clientId} not connected`);
     }
-
+    
     try {
       // Convert event to string
       const message = JSON.stringify(event);
-
+      
       // Send directly to client's inbox
-      this.natsConnection.publish(
-        `client.${clientId}`,
-        this.stringCodec.encode(message),
-      );
-
+      this.natsConnection.publish(`client.${clientId}`, this.stringCodec.encode(message));
+      
       // Update stats
       this.stats.messagesSent++;
-
+      
       // Log
-      this.logger?.info(
-        `Sent direct message to client ${clientId}: ${event.type}`,
-      );
+      this.logger?.info(`Sent direct message to client ${clientId}: ${event.type}`);
     } catch (error) {
       console.error(`Failed to send to client ${clientId}:`, error);
       throw error;
@@ -214,18 +234,15 @@ export class NatsRealtimeServer implements RealtimeServer {
       ...this.stats,
       connectedClients: this.clients.size,
       totalTopics: this.subscriptions.size,
-      uptime: Date.now() - this.startTime,
+      uptime: Date.now() - this.startTime
     };
   }
-
-  on<T extends ServerEventType>(
-    event: T,
-    handler: (data: unknown) => void,
-  ): void {
+  
+  on<T extends ServerEventType>(event: T, handler: (data: unknown) => void): void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }
-
+    
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       handlers.add(handler);
@@ -242,7 +259,7 @@ export class NatsRealtimeServer implements RealtimeServer {
       // Subscribe to client connection messages
       const connectSub = await this.natsConnection.subscribe("control.connect");
       this.natsSubscriptions.set("control.connect", connectSub);
-
+      
       // Process connection requests
       (async () => {
         for await (const msg of connectSub) {
@@ -253,15 +270,12 @@ export class NatsRealtimeServer implements RealtimeServer {
             console.error("Error processing client connection message:", error);
           }
         }
-      })().catch((err) =>
-        console.error("Error in control.connect subscription:", err),
-      );
+      })().catch(err => console.error("Error in control.connect subscription:", err));
 
       // Subscribe to client disconnection messages
-      const disconnectSub =
-        await this.natsConnection.subscribe("control.disconnect");
+      const disconnectSub = await this.natsConnection.subscribe("control.disconnect");
       this.natsSubscriptions.set("control.disconnect", disconnectSub);
-
+      
       // Process disconnection requests
       (async () => {
         for await (const msg of disconnectSub) {
@@ -269,53 +283,40 @@ export class NatsRealtimeServer implements RealtimeServer {
             const data = JSON.parse(this.stringCodec.decode(msg.data));
             this.handleClientDisconnection(data.clientId);
           } catch (error) {
-            this.logger?.error(
-              "Error processing client disconnection message:",
-              error,
-            );
+            this.logger?.error("Error processing client disconnection message:", error);
           }
         }
-      })().catch((err) =>
-        this.logger?.error("Error in control.disconnect subscription:", err),
-      );
+      })().catch(err => this.logger?.error("Error in control.disconnect subscription:", err));
 
       // Subscribe to subscription requests
-      const subscribeSub =
-        await this.natsConnection.subscribe("control.subscribe");
+      const subscribeSub = await this.natsConnection.subscribe("control.subscribe");
       this.natsSubscriptions.set("control.subscribe", subscribeSub);
-
+      
       // Process subscription requests
       (async () => {
         for await (const msg of subscribeSub) {
           try {
             const data = JSON.parse(this.stringCodec.decode(msg.data));
             this.subscribeClientToTopic(data.clientId, data.topic);
-
+            
             // Reply to confirm subscription if a reply subject is provided
             if (msg.reply) {
               const response = JSON.stringify({
                 success: true,
-                topic: data.topic,
+                topic: data.topic
               });
-              this.natsConnection?.publish(
-                msg.reply,
-                this.stringCodec.encode(response),
-              );
+              this.natsConnection?.publish(msg.reply, this.stringCodec.encode(response));
             }
           } catch (error) {
             this.logger?.error("Error processing subscription request:", error);
           }
         }
-      })().catch((err) =>
-        this.logger?.error("Error in control.subscribe subscription:", err),
-      );
+      })().catch(err => this.logger?.error("Error in control.subscribe subscription:", err));
 
       // Subscribe to unsubscription requests
-      const unsubscribeSub = this.natsConnection.subscribe(
-        "control.unsubscribe",
-      );
+      const unsubscribeSub = this.natsConnection.subscribe("control.unsubscribe");
       this.natsSubscriptions.set("control.unsubscribe", unsubscribeSub);
-
+      
       // Process unsubscription requests
       (async () => {
         for await (const msg of unsubscribeSub) {
@@ -323,15 +324,10 @@ export class NatsRealtimeServer implements RealtimeServer {
             const data = JSON.parse(this.stringCodec.decode(msg.data));
             this.unsubscribeClientFromTopic(data.clientId, data.topic);
           } catch (error) {
-            this.logger?.error(
-              "Error processing unsubscription request:",
-              error,
-            );
+            this.logger?.error("Error processing unsubscription request:", error);
           }
         }
-      })().catch((err) =>
-        this.logger?.error("Error in control.unsubscribe subscription:", err),
-      );
+      })().catch(err => this.logger?.error("Error in control.unsubscribe subscription:", err));
 
       this.logger?.info("Control subscriptions set up");
     } catch (error) {
@@ -343,25 +339,21 @@ export class NatsRealtimeServer implements RealtimeServer {
   /**
    * Handle a new client connection
    */
-  private handleClientConnection(
-    connectionData: ControlConnectMessage,
-    replySubject?: string,
-  ): void {
+  private handleClientConnection(connectionData: ControlConnectMessage, replySubject?: string): void {
     // Generate client ID if not provided
     const clientId = connectionData.clientId || crypto.randomUUID();
     const topic = connectionData.topic || "default";
 
-    this.logger?.info(
-      `Client ${clientId} connecting to topic: ${chalk.bold(topic)}`,
-    );
-    this.logger?.debug("Connection data", connectionData);
+
+    this.logger?.info(`Client ${clientId} connecting to topic: ${topic}`);
+    this.logger?.debug('Connection data', connectionData);
 
     // Store client information
     this.clients.set(clientId, {
       clientId,
       subscriptions: new Set(),
       lastSeen: Date.now(),
-      metadata: connectionData.metadata || {},
+      metadata: connectionData.metadata || {}
     });
 
     // Subscribe to topic if provided
@@ -377,13 +369,11 @@ export class NatsRealtimeServer implements RealtimeServer {
       clientId,
       topic,
       timestamp: new Date(),
-      metadata: connectionData.metadata || {},
+      metadata: connectionData.metadata || {}
     };
-
-    this.emit("client.connected", eventData);
-    this.logger?.info(
-      `Client ${clientId} connected and subscribed to: ${chalk.bold(topic)}`,
-    );
+    
+    this.emit('client.connected', eventData);
+    this.logger?.info(`Client ${clientId} connected and subscribed to: ${topic}`);
 
     // Send confirmation via reply subject if provided
     if (replySubject && this.natsConnection) {
@@ -392,13 +382,10 @@ export class NatsRealtimeServer implements RealtimeServer {
         type: "connection.established",
         source: "server",
         timestamp: new Date(),
-        data: { clientId, subscribedTopic: topic },
+        data: { clientId, subscribedTopic: topic }
       });
-
-      this.natsConnection.publish(
-        replySubject,
-        this.stringCodec.encode(confirmation),
-      );
+      
+      this.natsConnection.publish(replySubject, this.stringCodec.encode(confirmation));
     }
   }
 
@@ -411,13 +398,13 @@ export class NatsRealtimeServer implements RealtimeServer {
       this.subscriptions.set(topic, new Set());
       this.createTopicSubscription(topic);
     }
-
+    
     // Add client to topic subscribers
     const subscribers = this.subscriptions.get(topic);
     if (subscribers) {
       subscribers.add(clientId);
     }
-
+    
     // Update client's subscription list
     const client = this.clients.get(clientId);
     if (client) {
@@ -441,7 +428,7 @@ export class NatsRealtimeServer implements RealtimeServer {
         this.removeTopicSubscription(topic);
       }
     }
-
+    
     // Update client's subscription list
     const client = this.clients.get(clientId);
     if (client) {
@@ -464,7 +451,7 @@ export class NatsRealtimeServer implements RealtimeServer {
 
     // Get subscribed topics before removal
     const subscribedTopics: Topic[] = Array.from(client.subscriptions);
-
+    
     // Remove client
     this.clients.delete(clientId);
 
@@ -487,10 +474,10 @@ export class NatsRealtimeServer implements RealtimeServer {
     const eventData: ClientDisconnectedEventData = {
       clientId,
       topics: subscribedTopics,
-      timestamp: new Date(),
+      timestamp: new Date()
     };
-
-    this.emit("client.disconnected", eventData);
+    
+    this.emit('client.disconnected', eventData);
   }
 
   /**
@@ -498,54 +485,44 @@ export class NatsRealtimeServer implements RealtimeServer {
    */
   private async createTopicSubscription(topic: Topic): Promise<void> {
     if (!this.natsConnection) return;
-
+    
     // Check if we already have a subscription
     if (this.natsSubscriptions.has(`topic.${topic}`)) return;
-
+    
     try {
       // Create NATS subscription
-      const subscription = await this.natsConnection.subscribe(
-        `topic.${topic}`,
-      );
+      const subscription = await this.natsConnection.subscribe(`topic.${topic}`);
       this.natsSubscriptions.set(`topic.${topic}`, subscription);
-
+      
       // Set up message handler
       (async () => {
         for await (const msg of subscription) {
           try {
             const event = JSON.parse(this.stringCodec.decode(msg.data));
-
+            
             // Update stats
             this.stats.messagesReceived++;
-
+            
             // Emit message received event
             const messageEvent: MessageReceivedEventData = {
               clientId: event.clientId || "server",
               message: event,
-              timestamp: new Date(),
+              timestamp: new Date()
             };
-
-            this.emit("message.received", messageEvent);
-
+            
+            this.emit('message.received', messageEvent);
+            
             // Forward to subscribers
             await this.forwardMessageToSubscribers(topic, event);
           } catch (error) {
-            this.logger?.error(
-              `Error processing message on topic ${topic}:`,
-              error,
-            );
+            this.logger?.error(`Error processing message on topic ${topic}:`, error);
           }
         }
-      })().catch((err) =>
-        this.logger?.error(`Error in topic.${topic} subscription:`, err),
-      );
+      })().catch(err => this.logger?.error(`Error in topic.${topic} subscription:`, err));
 
       this.logger?.info(`Created subscription for topic: ${topic}`);
     } catch (error) {
-      this.logger?.error(
-        `Failed to create subscription for topic ${topic}:`,
-        error,
-      );
+      this.logger?.error(`Failed to create subscription for topic ${topic}:`, error);
     }
   }
 
@@ -555,7 +532,7 @@ export class NatsRealtimeServer implements RealtimeServer {
   private removeTopicSubscription(topic: Topic): void {
     const subKey = `topic.${topic}`;
     const subscription = this.natsSubscriptions.get(subKey);
-
+    
     if (subscription) {
       subscription.unsubscribe();
       this.natsSubscriptions.delete(subKey);
@@ -566,60 +543,48 @@ export class NatsRealtimeServer implements RealtimeServer {
   /**
    * Forward a message to all clients subscribed to a topic
    */
-  private async forwardMessageToSubscribers(
-    topic: Topic,
-    event: RealtimeEvent,
-  ): Promise<void> {
+  private async forwardMessageToSubscribers(topic: Topic, event: TEvent): Promise<void> {
     if (!this.natsConnection) return;
-
+    
     const subscribers = this.subscriptions.get(topic);
     if (!subscribers || subscribers.size === 0) return;
-
+    
     const message = JSON.stringify(event);
     const messageData = this.stringCodec.encode(message);
-
+    
     // Forward to each client's individual inbox
     const sendPromises: Promise<void>[] = [];
-
+    
     for (const clientId of subscribers) {
       const client = this.clients.get(clientId);
       if (client) {
         // Update client's last seen timestamp
         client.lastSeen = Date.now();
-
+        
         // In NATS, each client would have a unique inbox
         const clientInbox = `client.${clientId}`;
-
-        sendPromises.push(
-          (async () => {
-            try {
-              if (this.natsConnection) {
-                this.natsConnection.publish(clientInbox, messageData);
-                this.stats.messagesSent++;
-              } else {
-                console.error(
-                  `Cannot forward message to client ${clientId}: No NATS connection`,
-                );
-              }
-            } catch (error) {
-              console.error(
-                `Failed to forward message to client ${clientId}:`,
-                error,
-              );
+        
+        sendPromises.push((async () => {
+          try {
+            if (this.natsConnection) {
+              this.natsConnection.publish(clientInbox, messageData);
+              this.stats.messagesSent++;
+            } else {
+              console.error(`Cannot forward message to client ${clientId}: No NATS connection`);
             }
-          })(),
-        );
+          } catch (error) {
+            console.error(`Failed to forward message to client ${clientId}:`, error);
+          }
+        })());
       }
     }
-
+    
     // Wait for all sends to complete
     if (sendPromises.length > 0) {
       await Promise.all(sendPromises);
     }
-
-    this.logger?.info(
-      `Forwarded message to ${sendPromises.length} clients on topic ${topic}`,
-    );
+    
+    this.logger?.info(`Forwarded message to ${sendPromises.length} clients on topic ${topic}`);
   }
 
   /**
@@ -629,7 +594,7 @@ export class NatsRealtimeServer implements RealtimeServer {
     const cleanupInterval = setInterval(() => {
       const now = Date.now();
       const staleTimeThreshold = 5 * 60 * 1000; // 5 minutes
-
+      
       for (const [clientId, client] of this.clients.entries()) {
         if (now - client.lastSeen > staleTimeThreshold) {
           this.logger?.info(`Removing stale client: ${clientId}`);
@@ -637,7 +602,7 @@ export class NatsRealtimeServer implements RealtimeServer {
         }
       }
     }, 60 * 1000); // Check every minute
-
+    
     // Make sure cleanup interval doesn't prevent Node from exiting
     cleanupInterval.unref();
   }
@@ -647,7 +612,7 @@ export class NatsRealtimeServer implements RealtimeServer {
    */
   private emit(event: ServerEventType, data: unknown): void {
     const handlers = this.eventHandlers.get(event) || new Set();
-
+    
     for (const handler of handlers) {
       try {
         handler(data);
