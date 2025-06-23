@@ -8,17 +8,6 @@ export interface NatsServerOptions {
     maxAttempts: number;
     delayMs: number;
   },
-  nkeyPath?: {
-    pub: string; // Path to NKey public key file
-    seed:string;
-  }
+  nkey?:string;
   
-}
-
-export interface AuthOptions {
-  user?: string;
-  pass?: string;  
-  token?: string;
-  nkey?: string; // Path to NKey seed file
-  sigCB?: (nonce: Uint8Array) => Uint8Array;
 }

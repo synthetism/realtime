@@ -1,6 +1,13 @@
 // Simplified NATS server
 
-import { connect, StringCodec, type NatsConnection} from "nats";
+import { 
+  connect, 
+  StringCodec, 
+  type NatsConnection, 
+  type NKeyAuth, 
+  type Auth,
+  type ConnectionOptions
+} from "nats";
 import type { Logger } from "@synet/logger";
 import fs from "node:fs";
 import type { 
@@ -9,83 +16,48 @@ import type {
   EventBrokerServer
 } from "@synet/patterns/realtime";
 import * as nkeys from 'ts-nkeys';
-import type { AuthOptions, NatsServerOptions } from "./nats-types";
+import type { NatsServerOptions } from "./nats-types";
+import { AbstractNatsConnector } from "./abstract-nats-connector";
+import chalk from "chalk";
 
-export class NatsEventBrokerServer<TEvent extends RealtimeEvent = RealtimeEvent> implements EventBrokerServer<TEvent> {
-  private natsConnection?: NatsConnection;
-  private stats = { messageCount: 0, clientCount: 0 };
-  private eventHandlers = new Map<string, Set<(event: TEvent) => void>>();
-  private stringCodec = StringCodec();
+export class NatsEventBrokerServer<TEvent extends RealtimeEvent = RealtimeEvent> 
+  extends AbstractNatsConnector<TEvent> 
+  implements EventBrokerServer<TEvent> {
+  protected natsConnection?: NatsConnection;
+  protected stats = { messageCount: 0, clientCount: 0 };
+  protected eventHandlers = new Map<string, Set<(event: TEvent) => void>>();
+  protected stringCodec = StringCodec();
 
   constructor(    
-      private options: RealtimeServerOptions<NatsServerOptions> = {},
-      private logger?: Logger
-    ) {}
+      protected options: RealtimeServerOptions<NatsServerOptions> = {},
+      protected logger?: Logger      
+  ) {
+    
+    super(options, logger);
+  }
   
   async start(): Promise<void> {
     const natsUrl = this.options.transportOptions?.url || "nats://localhost:4222";
 
-    const authOptions: AuthOptions = {};
-
-     if (this.options.auth) {
-      // Set user/password if provided
-      if (this.options.transportOptions?.user) {
-        authOptions.user = this.options.transportOptions.user;
-        authOptions.pass = this.options.transportOptions.password;
-        this.logger?.debug('Using user/password authentication for NATS');
-      }
-      
-      // Set token if provided
-      if (this.options.transportOptions?.token) {
-        authOptions.token = this.options.transportOptions.token;
-        this.logger?.debug('Using token authentication for NATS');
-      }
-      
-      // Set nkey if provided
-      if (this.options.transportOptions?.nkeyPath) {
-        try {
-
-          const nkey_pub = fs.readFileSync(this.options.transportOptions.nkeyPath.pub, 'utf8').trim();
-          const nkey_seed = fs.readFileSync(this.options.transportOptions.nkeyPath.seed, 'utf8').trim();
-
-          authOptions.nkey = nkey_pub;
-
-          authOptions.sigCB = (nonce: Uint8Array): Uint8Array => {
-          // Convert nonce to Buffer if it's not already
-          const nonceBuffer = Buffer.isBuffer(nonce) 
-            ? nonce 
-            : Buffer.from(nonce);
-                      
-          const sk = nkeys.fromSeed(Buffer.from(nkey_seed));  
-          // Sign and return
-          return sk.sign(nonceBuffer);
-         };
-
-          this.logger?.debug('Using NKey authentication for NATS');
-        } catch (error) {
-          this.logger?.error(`Failed to read NKey from ${this.options.transportOptions.nkeyPath}:`, error);
-          throw error;
-        }
-      }
-    }
-    
-   this.natsConnection = await connect({
+   const natsOptions: ConnectionOptions = {
       servers: natsUrl,
-      ...authOptions,
+      ...this.getNatsAuth(),
       reconnect: this.options.transportOptions?.reconnect?.enabled !== false,
       maxReconnectAttempts: this.options.transportOptions?.reconnect?.maxAttempts || -1,
       reconnectTimeWait: this.options.transportOptions?.reconnect?.delayMs || 1000,
-    });
+    };
 
-
-
+     
+   this.natsConnection = await connect(natsOptions);
+ 
+      
     this.logger?.debug(`NATS Event Broker connected to ${natsUrl}`);
     
     await this.setupSubscriptions();
 
   }
 
- private async setupSubscriptions(): Promise<void> {
+  protected async setupSubscriptions(): Promise<void> {
   
     if (!this.natsConnection) return;
 
@@ -95,8 +67,7 @@ export class NatsEventBrokerServer<TEvent extends RealtimeEvent = RealtimeEvent>
     (async () => {
       for await (const msg of controlSub) {
         try {
-
-          console.log("Control message received:", msg.subject);
+     
           // Simple connection tracking for stats only
           if (msg.subject === "control.connect") {
             this.stats.clientCount++;
@@ -138,40 +109,6 @@ export class NatsEventBrokerServer<TEvent extends RealtimeEvent = RealtimeEvent>
 
   }
 
-  on(type: string, handler: (event: TEvent) => void): () => void {
-    if (!this.eventHandlers.has(type)) {
-      this.eventHandlers.set(type, new Set());
-    }
-
-    const handlers = this.eventHandlers.get(type);
-    if (handlers) {
-      handlers.add(handler);
-    }
-    
-    return () => {
-      const handlers = this.eventHandlers.get(type);
-      if (handlers) {
-        handlers.delete(handler);
-        if (handlers.size === 0) {
-          this.eventHandlers.delete(type);
-        }
-      }
-    };
-  }
-
-  private notifyHandlers(type: string, event: TEvent): void {
-    // Notify type-specific handlers
-    const handlers = this.eventHandlers.get(type);
-    if (handlers) {
-      for (const handler of handlers) {
-        try {
-          handler(event);
-        } catch (error) {
-          this.logger?.error(`Error in event handler for ${type}:`, error);
-        }
-      }
-    }
-  }
 
   getStats(): { messageCount: number; clientCount: number } {
     return { ...this.stats };

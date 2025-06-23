@@ -52,9 +52,12 @@ export class WebSocketRealtimeServer implements RealtimeServer {
     const port = this.options.transportOptions?.port || 3030;
     this.wsServer = new WebSocketServer({ port });
 
-    this.wsServer.on("connection", (socket: WebSocket, request:IncomingMessage) => {
-      this.handleNewConnection(socket, request);
-    });
+    this.wsServer.on(
+      "connection",
+      (socket: WebSocket, request: IncomingMessage) => {
+        this.handleNewConnection(socket, request);
+      },
+    );
 
     this.logger?.info(`Websocket server listening on port ${port}`);
   }
