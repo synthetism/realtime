@@ -1,7 +1,7 @@
 import { NatsRealtimeProvider } from "./nats-provider";
 import type { RealtimeProviderOptions } from "@synet/patterns/realtime/client";
 import type { NatsOptions } from "./nats-types";
-
+import type { Logger } from "@synet/logger";
 /**
  * Creates a new NATS client
  * @param natsUrl The URL of the NATS server
@@ -10,6 +10,7 @@ import type { NatsOptions } from "./nats-types";
 export function createNatsClient(
   natsUrl: string,
   options: RealtimeProviderOptions<NatsOptions> = {},
+  logger?: Logger,
 ): NatsRealtimeProvider {
-  return new NatsRealtimeProvider(natsUrl, options);
+  return new NatsRealtimeProvider(natsUrl, options, logger);
 }

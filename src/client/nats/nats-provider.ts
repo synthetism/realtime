@@ -6,7 +6,7 @@ import type {
 } from "@synet/patterns/realtime";
 import type { NatsOptions } from "./nats-types";
 import { NatsRealtimeChannel } from "./nats-channel";
-
+import type { Logger } from "@synet/logger";
 /**
  * NATS-based implementation of RealtimeProvider
  */
@@ -16,11 +16,13 @@ export class NatsRealtimeProvider implements RealtimeProvider {
   constructor(
     public readonly baseUrl: string,
     private options: RealtimeProviderOptions<NatsOptions> = {},
+    private logger?: Logger,
   ) {}
 
   /**
    * Create a channel for the specified topic
    */
+
   createChannel<
     TIn extends RealtimeEvent = RealtimeEvent,
     TOut extends RealtimeEvent = RealtimeEvent,
@@ -29,23 +31,19 @@ export class NatsRealtimeProvider implements RealtimeProvider {
     options: RealtimeProviderOptions<NatsOptions> = {},
   ): RealtimeChannel<TIn, TOut> {
     // Create NATS URL with topic
-    const natsUrl = this.getNatsUrl(topic, options);
+    const natsUrl = this.baseUrl;
 
     // Create the channel with merged options
-    const channel = new NatsRealtimeChannel<TIn, TOut>(natsUrl, {
-      ...this.options,
-      ...options,
-      reconnect: this.options.reconnect ?? options.reconnect,
-      authToken: this.options.authToken ?? options.authToken,
-      transportOptions: {
-        ...this.options.transportOptions,
-        ...options.transportOptions,
-      },
-    });
+    const channel = new NatsRealtimeChannel<TIn, TOut>(
+      natsUrl,
+      topic,
+      this.options,
+      this.logger,
+    );
 
     // Start connecting in background - doesn't wait for connection to complete
     channel.connect().catch((error) => {
-      console.error(`Error connecting to channel ${topic}:`, error);
+      this.logger?.error(`Error connecting to channel ${topic}:`, error);
     });
 
     // Store the channel
@@ -82,29 +80,5 @@ export class NatsRealtimeProvider implements RealtimeProvider {
 
     await Promise.all(closePromises);
     this.channels.clear();
-  }
-
-  /**
-   * Create a NATS URL with topic as query parameter
-   */
-  private getNatsUrl(
-    topic: string,
-    options: RealtimeProviderOptions<NatsOptions>,
-  ): string {
-    // Start with the base URL
-    const url = new URL(this.baseUrl);
-
-    // Add topic as query param
-    url.searchParams.append("topic", topic);
-
-    // Add auth token if provided
-    if (options.authToken || this.options.authToken) {
-      url.searchParams.append(
-        "token",
-        options.authToken || this.options.authToken || "",
-      );
-    }
-
-    return url.toString();
   }
 }

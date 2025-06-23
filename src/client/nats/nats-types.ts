@@ -12,8 +12,10 @@ export interface NatsOptions {
   token?: string;
   nkeyPath?: {
     pub: string; // Path to NKey public key file
-    seed:string;
-  }
+    seed: string;
+  };
+
+  nkey?: string;
 
   /**
    * Connection options
@@ -33,8 +35,8 @@ export interface NatsOptions {
   debug?: boolean;
 }
 
-
-export interface NatsProviderOptions extends RealtimeProviderOptions<NatsOptions> {
+export interface NatsProviderOptions
+  extends RealtimeProviderOptions<NatsOptions> {
   // Common options
 
   auth?: {
@@ -54,4 +56,11 @@ export interface NatsProviderOptions extends RealtimeProviderOptions<NatsOptions
   transportOptions?: NatsOptions;
 }
 
-
+export interface AuthOptions {
+  user?: string;
+  pass?: string;
+  token?: string;
+  nkey?: string; // Path to NKey seed file
+  nkeySeed?: string; // NKey seed as a string
+  sigCB?: (nonce: Uint8Array) => Uint8Array;
+}
