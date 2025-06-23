@@ -281,10 +281,14 @@ private monitorConnectionStatus(): void {
     };
   }
 
+  async emit(event: TOut): Promise<void> {
+    // Deprecated alias for publish
+    return this.publish(event);
+  }
   /**
    * Send an event to the channel
    */
-  async emit(event: TOut): Promise<void> {
+  async publish(event: TOut): Promise<void> {
     // If connecting, wait for the connection to complete
     if (this.state === ChannelState.CONNECTING && this.connectionPromise) {
       await this.connectionPromise;
