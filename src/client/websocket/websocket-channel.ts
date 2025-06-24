@@ -153,7 +153,7 @@ export class WebSocketRealtimeChannel<
     this.socket.send(JSON.stringify(RealtimeEvent));
   } */
 
-  async emit(event: TOut): Promise<void> {
+  async publish(event: TOut): Promise<void> {
     // If connecting, wait for the connection to complete
     if (this.state === ChannelState.CONNECTING && this.connectionPromise) {
       await this.connectionPromise;

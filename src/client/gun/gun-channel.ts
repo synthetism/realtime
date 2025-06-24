@@ -329,7 +329,7 @@ private notifyHandlersWithResolvedData(resolvedEvent: TIn): void { // Changed si
    * Send an event through this channel
    * @param event The event to send
    */
-async emit(event: TOut): Promise<void> {
+async publish(event: TOut): Promise<void> {
   if (this.state !== ChannelState.CONNECTED) {
     await this.connect();
   }
