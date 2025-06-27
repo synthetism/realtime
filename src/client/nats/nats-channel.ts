@@ -5,7 +5,7 @@ import type {
   RealtimeEvent,
   EventSelector,
 } from "@synet/patterns/realtime/client";
-import type { NatsOptions, AuthOptions } from "./nats-types";
+import type { NatsOptions } from "./nats-types";
 import type { Logger } from "@synet/logger";
 import { AbstractNatsConnector } from "./abstract-nats-connector";
 

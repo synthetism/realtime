@@ -55,12 +55,3 @@ export interface NatsProviderOptions
   // Transport-specific options
   transportOptions?: NatsOptions;
 }
-
-export interface AuthOptions {
-  user?: string;
-  pass?: string;
-  token?: string;
-  nkey?: string; // Path to NKey seed file
-  nkeySeed?: string; // NKey seed as a string
-  sigCB?: (nonce: Uint8Array) => Uint8Array;
-}

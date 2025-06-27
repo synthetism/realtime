@@ -9,6 +9,16 @@ import { WebSocketRealtimeChannel } from "./websocket-channel";
 /**
  * WebSocket-based implementation of RealtimeProvider
  */
+/**
+ * Options for WebSocket provider
+ */
+interface WebSocketProviderOptions {
+  /**
+   * Whether to include topic in path (true) or as query param (false)
+   */
+  topicInPath?: boolean;
+}
+
 export class WebSocketRealtimeProvider implements RealtimeProvider {
   private channels: Map<string, RealtimeChannel> = new Map();
 
@@ -99,12 +109,3 @@ export class WebSocketRealtimeProvider implements RealtimeProvider {
   }
 }
 
-/**
- * Options for WebSocket provider
- */
-interface WebSocketProviderOptions {
-  /**
-   * Whether to include topic in path (true) or as query param (false)
-   */
-  topicInPath?: boolean;
-}
